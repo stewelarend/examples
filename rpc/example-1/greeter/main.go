@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/stewelarend/rpc"
 
-	_ "github.com/stewelarend/rpc/http"
+	_ "github.com/stewelarend/rpc/server/http"
 )
 
 func main() {

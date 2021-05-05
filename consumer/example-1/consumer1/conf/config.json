@@ -1,0 +1,9 @@
+{
+    "consumer":{
+        "stream":{
+            "nats":{
+                "topic":"example-1"
+            }
+        }
+    }
+}
