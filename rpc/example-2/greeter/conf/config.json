@@ -1,0 +1,10 @@
+{
+    "rpc":{
+        "server":{
+            "http":{
+                "address":"",
+                "port":8000
+            }
+        }
+    }
+}
