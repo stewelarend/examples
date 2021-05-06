@@ -38,3 +38,22 @@ Registered constructor[nats] = &{URI: Topic:}
 ```
 
 You can change the topic from `example-1` to another value in config and the build.yml file (use the same value in both).
+
+
+## Faster Development Cycles
+To run NATS and API in docker, comment out the consumer part in build.yml
+Then do docker-compose up to start nats and the API that allow you to send events/requests...
+Then build consumer locally and change as you like and run locally from the console
+It makes the dev cycle a lot faster and allow you to import other libraries with replace statements in go.mod
+which you cannot do in the docker builds.
+
+
+## Testing with API
+Publish an event with this on the console:
+```
+curl -XPOST 'http://localhost:8080/publish/hello' -d'{"name":"Janneman"}'
+NATS publish success. Duration(121.558µs)
+```
+The event type is on the URL after /publish/, i.e. "hello" in this example.
+The event data is in the POST body.
+

@@ -1,2 +1,4 @@
 rpc/example-1/greeter/greeter
 rpc/example-2/greeter/greeter
+consumer/example-1/consumer1/consumer1
+consumer/example-1/api/api

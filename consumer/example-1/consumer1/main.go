@@ -13,15 +13,20 @@ func main() {
 		panic(err)
 	}
 	greeter := consumer.New("greeter")
-	greeter.AddFunc("hello", hello)
+	greeter.AddStruct("hello", helloRequest{}) //   ...this routing is not yet supported and handlers are not yet called from consumer lib! ....
 	greeter.AddFunc("goodbye", goodbye)
 	if err := greeter.Run(); err != nil {
 		panic(err)
 	}
 }
 
+type helloRequest struct {
+	Name string `json:"name"`
+	Age  int    `json:"age"`
+}
+
 //consumer return nil to ack the message or error to put it back on the queue
-func hello(ctx consumer.IContext, req interface{}) (err error) {
+func (req helloRequest) Exec(ctx consumer.IContext) (err error) {
 	fmt.Printf("HELLO: %+v\n", req)
 	return nil
 }

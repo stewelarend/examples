@@ -7,27 +7,28 @@ services:
       - "4222"
     ports:
       - "8222:8222"
+      - "4222:4222"
     hostname: nats-server
-  api:
-    build:
-      context: "./api"
-    links:
-      - nats
-    environment:
-      - "NATS_URI=nats://nats:4222"
-      - "NATS_TOPIC=example-1"
-    depends_on:
-      - nats
-    ports:
-      - "8080:8080"
-  consumer1:
-    build:
-      context: "./consumer1"
-    links:
-      - nats
-    # environment:
-    #   - "NATS_URI=nats://nats:4222"
-    depends_on:
-      - nats
-    # ports:
-    #   - "8181:8181"
+  # api:
+  #   build:
+  #     context: "./api"
+  #   links:
+  #     - nats
+  #   environment:
+  #     - "NATS_URI=nats://nats:4222"
+  #     - "NATS_TOPIC=example-1"
+  #   depends_on:
+  #     - nats
+  #   ports:
+  #     - "8080:8080"
+  # consumer1:
+  #   build:
+  #     context: "./consumer1"
+  #   links:
+  #     - nats
+  #   # environment:
+  #   #   - "NATS_URI=nats://nats:4222"
+  #   depends_on:
+  #     - nats
+  #   # ports:
+  #   #   - "8181:8181"

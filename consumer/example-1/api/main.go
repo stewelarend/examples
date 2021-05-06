@@ -2,13 +2,16 @@ package main
 
 //this is a simple API server so that you can use curl on the console to push events into NATS that the consumer will process
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/stewelarend/consumer/message"
 )
 
 func main() {
@@ -35,7 +38,7 @@ func main() {
 	http.HandleFunc("/", s.baseRoot)
 	http.HandleFunc("/healthz", s.healthz)
 	http.HandleFunc("/request", s.request)
-	http.HandleFunc("/publish", s.publish)
+	http.HandleFunc("/publish/", s.publish)
 
 	fmt.Println("Server listening on port 8080...")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
@@ -60,22 +63,65 @@ func (s apiServer) healthz(w http.ResponseWriter, r *http.Request) {
 //the consumer will see the Reply path is set, and push a response
 func (s apiServer) request(w http.ResponseWriter, r *http.Request) {
 	requestAt := time.Now()
-	response, err := s.nc.Request(s.topic, []byte("help please"), 5*time.Second)
+	request := message.Request{
+		Message: message.Message{
+			Timestamp: requestAt,
+		},
+		TTL:  5 * time.Second,
+		Data: r.URL.Query(),
+	}
+	jsonRequest, _ := json.Marshal(request)
+	natsResponse, err := s.nc.Request(s.topic, jsonRequest, 5*time.Second)
 	if err != nil {
 		log.Println("NATS request failed:", err)
+	} else {
+		duration := time.Since(requestAt)
+		fmt.Fprintf(w, "NATS request success. Duration(%+v) Response: %v\n", duration, string(natsResponse.Data))
+
+		var response message.Response
+		if err := json.Unmarshal(natsResponse.Data, &response); err != nil {
+			fmt.Printf("failed to decode JSON response: %v\n", err)
+		} else {
+			if err := response.Validate(); err != nil {
+				fmt.Printf("invalid response: %v\n", err)
+			} else {
+				fmt.Printf("Valid Response: %+v\n", response)
+			}
+		}
 	}
-	duration := time.Since(requestAt)
-	fmt.Fprintf(w, "NATS request success. Duration(%+v) Response: %v\n", duration, string(response.Data))
 }
 
 //this handler publishes an event not expecting a response
 //the consumer will see the Reply path is unset and will not push a response at all
-func (s apiServer) publish(w http.ResponseWriter, r *http.Request) {
+func (s apiServer) publish(httpRes http.ResponseWriter, httpReq *http.Request) {
 	requestAt := time.Now()
-	err := s.nc.Publish(s.topic, []byte("help please"))
+	if httpReq.Method != http.MethodPost {
+		http.Error(httpRes, "expecting method POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	if !strings.HasPrefix(httpReq.URL.Path, "/publish/") || len(httpReq.URL.Path) <= len("/publish/") {
+		http.Error(httpRes, "expecting event type in URL after /publish/...", http.StatusBadRequest)
+		return
+	}
+
+	var reqData map[string]interface{}
+	if err := json.NewDecoder(httpReq.Body).Decode(&reqData); err != nil {
+		http.Error(httpRes, fmt.Sprintf("cannot parse JSON body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	message := message.Event{
+		Message: message.Message{
+			Timestamp: requestAt,
+		},
+		Type: httpReq.URL.Path[9:], //skip '/publish/'
+		Data: reqData,
+	}
+	jsonMessage, _ := json.Marshal(message)
+	err := s.nc.Publish(s.topic, jsonMessage)
 	if err != nil {
 		log.Println("NATS publish failed:", err)
 	}
 	duration := time.Since(requestAt)
-	fmt.Fprintf(w, "NATS publish success. Duration(%+v)\n", duration)
+	fmt.Fprintf(httpRes, "NATS publish success. Duration(%+v)\n", duration)
 }

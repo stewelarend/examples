@@ -2,6 +2,7 @@
     "consumer":{
         "stream":{
             "nats":{
+		"uri":"nats://localhost:4222",
                 "topic":"example-1"
             }
         }
