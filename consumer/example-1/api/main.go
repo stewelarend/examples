@@ -4,7 +4,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -12,7 +11,10 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/stewelarend/consumer/message"
+	"github.com/stewelarend/logger"
 )
+
+var log = logger.New("nats-server")
 
 func main() {
 	s := apiServer{
@@ -31,18 +33,18 @@ func main() {
 		time.Sleep(1 * time.Second)
 	}
 	if err != nil {
-		log.Fatal("Error establishing connection to NATS:", err)
+		panic(fmt.Errorf("Error establishing connection to NATS:", err))
 	}
 
 	fmt.Println("Connected to NATS at:", s.nc.ConnectedUrl())
 	http.HandleFunc("/", s.baseRoot)
 	http.HandleFunc("/healthz", s.healthz)
-	http.HandleFunc("/request", s.request)
+	http.HandleFunc("/request/", s.request)
 	http.HandleFunc("/publish/", s.publish)
 
 	fmt.Println("Server listening on port 8080...")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
-		log.Fatal(err)
+		panic(fmt.Errorf("HTTP Server failed: %v", err))
 	}
 }
 
@@ -61,34 +63,51 @@ func (s apiServer) healthz(w http.ResponseWriter, r *http.Request) {
 
 //this handler sends a request to NATS, waiting for a response
 //the consumer will see the Reply path is set, and push a response
-func (s apiServer) request(w http.ResponseWriter, r *http.Request) {
+func (s apiServer) request(httpRes http.ResponseWriter, httpReq *http.Request) {
 	requestAt := time.Now()
+	if httpReq.Method != http.MethodPost {
+		http.Error(httpRes, "expecting method POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	if !strings.HasPrefix(httpReq.URL.Path, "/request/") || len(httpReq.URL.Path) <= len("/request/") {
+		http.Error(httpRes, "expecting operation name in URL after /request/...", http.StatusBadRequest)
+		return
+	}
+
+	var reqData map[string]interface{}
+	if err := json.NewDecoder(httpReq.Body).Decode(&reqData); err != nil {
+		http.Error(httpRes, fmt.Sprintf("cannot parse JSON body: %v", err), http.StatusBadRequest)
+		return
+	}
 	request := message.Request{
 		Message: message.Message{
 			Timestamp: requestAt,
 		},
-		TTL:  5 * time.Second,
-		Data: r.URL.Query(),
+		TTL:       5 * time.Second,
+		Operation: httpReq.URL.Path[9:], //skip '/request/'
+		Data:      reqData,
 	}
 	jsonRequest, _ := json.Marshal(request)
 	natsResponse, err := s.nc.Request(s.topic, jsonRequest, 5*time.Second)
 	if err != nil {
-		log.Println("NATS request failed:", err)
-	} else {
-		duration := time.Since(requestAt)
-		fmt.Fprintf(w, "NATS request success. Duration(%+v) Response: %v\n", duration, string(natsResponse.Data))
-
-		var response message.Response
-		if err := json.Unmarshal(natsResponse.Data, &response); err != nil {
-			fmt.Printf("failed to decode JSON response: %v\n", err)
-		} else {
-			if err := response.Validate(); err != nil {
-				fmt.Printf("invalid response: %v\n", err)
-			} else {
-				fmt.Printf("Valid Response: %+v\n", response)
-			}
-		}
+		http.Error(httpRes, fmt.Sprintf("NATS request to topic(%s) failed: %v", s.topic, err), http.StatusServiceUnavailable)
+		return
 	}
+	duration := time.Since(requestAt)
+	var response message.Response
+	if err := json.Unmarshal(natsResponse.Data, &response); err != nil {
+		http.Error(httpRes, fmt.Sprintf("failed to decode JSON response: %v\n", err), http.StatusInternalServerError)
+		return
+	}
+
+	if err := response.Validate(); err != nil {
+		http.Error(httpRes, fmt.Sprintf("invalid response: %v\n", err), http.StatusInternalServerError)
+	}
+
+	jsonResponse, _ := json.Marshal(response)
+	httpRes.Header().Set("Content-Type", "application/json")
+	httpRes.Write(jsonResponse)
+	log.Debugf("Request(%+v)->Response(%+v) Duration(%+v)", request, response, duration)
 }
 
 //this handler publishes an event not expecting a response
@@ -120,8 +139,10 @@ func (s apiServer) publish(httpRes http.ResponseWriter, httpReq *http.Request) {
 	jsonMessage, _ := json.Marshal(message)
 	err := s.nc.Publish(s.topic, jsonMessage)
 	if err != nil {
-		log.Println("NATS publish failed:", err)
+		http.Error(httpRes, fmt.Sprintf("NATS publish failed:", err), http.StatusServiceUnavailable)
+		return
 	}
+	//success
 	duration := time.Since(requestAt)
 	fmt.Fprintf(httpRes, "NATS publish success. Duration(%+v)\n", duration)
 }

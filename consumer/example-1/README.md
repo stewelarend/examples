@@ -56,4 +56,3 @@ NATS publish success. Duration(121.558µs)
 ```
 The event type is on the URL after /publish/, i.e. "hello" in this example.
 The event data is in the POST body.
-
